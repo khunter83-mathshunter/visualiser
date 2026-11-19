@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Visualiser</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-black text-white font-sans antialiased overflow-hidden select-none h-screen w-screen relative">
+
+    <!-- Main Viewfinder Viewport -->
+    <main id="viewport" class="relative w-full h-full flex items-center justify-center bg-zinc-950 overflow-hidden">
+        
+        <!-- Live Video Feed Container -->
+        <div id="video-wrapper" class="relative flex items-center justify-center w-full h-full transition-transform duration-300 ease-out">
+            <video id="camera-feed" autoplay playsinline muted class="max-w-none transition-transform duration-200 ease-out object-contain"></video>
+        </div>
+
+        <!-- Viewfinder Grid Overlay (Rule of Thirds) -->
+        <div id="grid-overlay" class="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-0 transition-opacity duration-300 z-10">
+            <div class="border-r border-b border-white/20"></div>
+            <div class="border-r border-b border-white/20"></div>
+            <div class="border-b border-white/20"></div>
+            <div class="border-r border-b border-white/20"></div>
+            <div class="border-r border-b border-white/20"></div>
+            <div class="border-b border-white/20"></div>
+            <div class="border-r border-white/20"></div>
+            <div class="border-r border-white/20"></div>
+            <div></div>
+        </div>
+
+        <!-- Shutter Flash Effect Overlay -->
+        <div id="shutter-flash" class="pointer-events-none fixed inset-0 bg-white opacity-0 transition-opacity duration-150 z-50"></div>
+
+        <!-- Camera Stopped / Paused Overlay -->
+        <div id="camera-off-overlay" class="hidden absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-sm p-6 text-center">
+            <div class="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/10 text-zinc-400 flex items-center justify-center mb-4 shadow-xl">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" />
+                </svg>
+            </div>
+            <h2 class="text-lg font-semibold text-white mb-1">Camera Stopped</h2>
+            <p class="text-xs sm:text-sm text-zinc-400 max-w-xs mb-5">
+                The camera feed is currently paused and the hardware indicator light is off.
+            </p>
+            <button id="btn-overlay-start" class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-zinc-950 font-semibold text-sm shadow-lg transition-all">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                </svg>
+                <span>Start Camera</span>
+            </button>
+        </div>
+
+        <!-- Top Bar: Status Badge (Top-Left) & Rotation/Flip Controls (Top-Right) -->
+        <header class="fixed top-0 left-0 right-0 p-4 sm:p-6 flex items-start justify-between z-30 pointer-events-none">
+            
+            <!-- Top-Left: Live Indicator & Resolution / Mode Info -->
+            <div class="flex flex-col gap-2 pointer-events-auto">
+                <div class="flex items-center gap-2.5 bg-zinc-900/75 backdrop-blur-md border border-white/10 px-3.5 py-2 rounded-full shadow-lg">
+                    <span id="live-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                    <span id="status-text" class="text-xs font-semibold tracking-wider uppercase text-zinc-200">Initializing</span>
+                    <span id="resolution-badge" class="hidden sm:inline-block text-[11px] font-medium text-zinc-400 border-l border-white/15 pl-2.5">-- × --</span>
+                </div>
+
+                <!-- Quick Action Pills: Start/Stop Camera & Grid Toggle -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-toggle-camera" title="Stop or Start Camera Feed" class="flex items-center gap-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 active:scale-95 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold transition-all shadow-md">
+                        <span id="toggle-camera-icon" class="w-2.5 h-2.5 rounded-xs bg-red-400"></span>
+                        <span id="toggle-camera-label">Stop Camera</span>
+                    </button>
+
+                    <button id="btn-grid" title="Toggle Rule-of-Thirds Grid" class="flex items-center gap-1.5 bg-zinc-900/75 hover:bg-zinc-800/90 active:scale-95 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs font-medium text-zinc-300 transition-all shadow-md">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                        </svg>
+                        <span>Grid</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Top-Right: Rotation & Mirror Controls -->
+            <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2 pointer-events-auto">
+                <div class="flex items-center gap-1.5 bg-zinc-900/75 backdrop-blur-md border border-white/10 p-1.5 rounded-2xl shadow-xl">
+                    <!-- Rotate Counter-Clockwise (-90°) -->
+                    <button id="btn-rotate-ccw" title="Rotate Left (-90°)" class="p-2.5 rounded-xl hover:bg-white/10 active:bg-white/20 active:scale-95 text-zinc-200 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                        </svg>
+                    </button>
+
+                    <!-- Rotation Angle Readout / Reset -->
+                    <button id="btn-rotate-reset" title="Reset Rotation to 0°" class="px-2.5 py-1.5 rounded-xl hover:bg-white/10 active:scale-95 text-xs font-semibold tabular-nums text-amber-400 min-w-[3.2rem] text-center transition-all">
+                        0°
+                    </button>
+
+                    <!-- Rotate Clockwise (+90°) -->
+                    <button id="btn-rotate-cw" title="Rotate Right (+90°)" class="p-2.5 rounded-xl hover:bg-white/10 active:bg-white/20 active:scale-95 text-zinc-200 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" />
+                        </svg>
+                    </button>
+
+                    <div class="w-px h-6 bg-white/15 mx-0.5"></div>
+
+                    <!-- Horizontal Mirror / Flip Toggle -->
+                    <button id="btn-mirror" title="Flip Horizontal (Mirror)" class="p-2.5 rounded-xl hover:bg-white/10 active:bg-white/20 active:scale-95 text-zinc-200 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" transform="rotate(90 12 12)" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Bottom Controls: Zoom Bar & Primary Camera Dock -->
+        <footer class="fixed bottom-0 left-0 right-0 p-4 sm:p-6 flex flex-col items-center gap-4 z-30 pointer-events-none bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+            
+            <!-- Zoom Controls Pill -->
+            <div class="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-zinc-900/80 backdrop-blur-md border border-white/10 px-3.5 py-2 rounded-full shadow-xl max-w-full">
+                <!-- Zoom Out Button -->
+                <button id="btn-zoom-out" title="Zoom Out" class="p-2 rounded-full hover:bg-white/10 active:bg-white/20 active:scale-90 text-zinc-200 disabled:opacity-30 transition-all">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM13.5 10.5h-6" />
+                    </svg>
+                </button>
+
+                <!-- Zoom Slider -->
+                <input id="zoom-slider" type="range" min="1" max="5" step="0.1" value="1" aria-label="Zoom level"
+                    class="w-28 sm:w-44 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-400">
+
+                <!-- Zoom In Button -->
+                <button id="btn-zoom-in" title="Zoom In" class="p-2 rounded-full hover:bg-white/10 active:bg-white/20 active:scale-90 text-zinc-200 disabled:opacity-30 transition-all">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+                    </svg>
+                </button>
+
+                <!-- Current Zoom Multiplier / Reset Button -->
+                <button id="btn-zoom-reset" title="Reset Zoom to 1.0x" class="ml-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-xs font-bold tabular-nums text-amber-400 transition-all flex items-center gap-1">
+                    <span id="zoom-label">1.0×</span>
+                    <span id="zoom-mode-badge" class="text-[9px] uppercase tracking-wider text-zinc-400 font-normal hidden sm:inline">DIG</span>
+                </button>
+            </div>
+
+            <!-- Main Action Dock: Thumbnail Preview | Shutter Button | Switch Camera -->
+            <div class="pointer-events-auto flex items-center justify-between w-full max-w-sm px-4 pb-2">
+                
+                <!-- Left Slot: Last Snapshot Thumbnail & Download -->
+                <div class="w-16 h-16 flex items-center justify-center">
+                    <button id="btn-open-preview" class="hidden group relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/40 hover:border-amber-400 shadow-lg transition-all active:scale-95 bg-zinc-900" title="View & Download Snapshot">
+                        <img id="thumbnail-img" src="" alt="Last Snapshot" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Center Slot: Prominent Shutter Button -->
+                <button id="btn-capture" title="Take Screenshot" aria-label="Take Screenshot"
+                    class="group relative w-20 h-20 rounded-full p-1.5 border-4 border-white/90 hover:border-amber-400 active:scale-90 disabled:opacity-35 disabled:pointer-events-none transition-all shadow-2xl flex items-center justify-center bg-black/20 backdrop-blur-sm">
+                    <span class="w-full h-full rounded-full bg-white group-hover:bg-amber-50 group-active:bg-amber-400 transition-colors"></span>
+                </button>
+
+                <!-- Right Slot: Switch Camera Button (Front/Back or Multiple Devices) -->
+                <div class="w-16 h-16 flex items-center justify-center">
+                    <button id="btn-switch-camera" title="Switch Camera" aria-label="Switch Camera"
+                        class="hidden w-13 h-13 p-3.5 rounded-full bg-zinc-900/80 hover:bg-zinc-800 active:scale-90 backdrop-blur-md border border-white/15 text-white shadow-lg transition-all">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </footer>
+
+        <!-- Error / Permission State Modal Overlay -->
+        <div id="error-overlay" class="hidden fixed inset-0 z-40 bg-zinc-950/90 backdrop-blur-lg flex items-center justify-center p-6">
+            <div class="max-w-md w-full bg-zinc-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-center shadow-2xl">
+                <div class="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto mb-5">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M12 18.75H4.5a2.25 2.25 0 01-2.25-2.25V9m12.841 9.091L16.5 19.5m-1.409-1.409c.407-.407.659-.97.659-1.591v-9a2.25 2.25 0 00-2.25-2.25h-9c-.621 0-1.184.252-1.591.659m12.182 12.182L2.909 5.909M1.5 4.5l1.409 1.409" />
+                    </svg>
+                </div>
+                <h2 id="error-title" class="text-xl font-bold text-white mb-2">Camera Access Required</h2>
+                <p id="error-message" class="text-sm text-zinc-400 leading-relaxed mb-6">
+                    Please grant camera permission in your browser settings to view the live camera feed. Ensure you are accessing this page over HTTPS or localhost.
+                </p>
+                <button id="btn-retry-camera" class="w-full py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-98 text-zinc-950 font-semibold text-sm transition-all shadow-lg">
+                    Retry Camera Access
+                </button>
+            </div>
+        </div>
+
+        <!-- Snapshot Preview & Download Modal -->
+        <div id="preview-modal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4 sm:p-6">
+            <div class="max-w-2xl w-full bg-zinc-900/95 border border-white/15 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                <!-- Modal Header -->
+                <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        <h3 class="text-sm font-semibold text-white">Captured Snapshot</h3>
+                        <span id="snapshot-dimensions" class="text-xs text-zinc-400 font-mono"></span>
+                    </div>
+                    <button id="btn-close-preview" class="p-2 rounded-xl hover:bg-white/10 text-zinc-400 hover:text-white transition-colors" title="Close Preview">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Captured Image Canvas Display -->
+                <div class="flex-1 overflow-auto p-4 sm:p-6 flex items-center justify-center bg-zinc-950/60 min-h-[240px]">
+                    <img id="modal-preview-img" src="" alt="Captured Screenshot Preview" class="max-h-[58vh] w-auto rounded-xl shadow-lg border border-white/10 object-contain">
+                </div>
+
+                <!-- Modal Footer Actions -->
+                <div class="px-5 py-4 border-t border-white/10 flex flex-wrap items-center justify-end gap-3 bg-zinc-900">
+                    <button id="btn-modal-retake" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-sm font-medium text-zinc-200 transition-all">
+                        Back to Camera
+                    </button>
+                    <a id="btn-download-png" href="#" download="snapshot.png" class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-zinc-950 font-semibold text-sm shadow-lg transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span>Download PNG</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subtle Toast Notification -->
+        <div id="toast" class="pointer-events-none fixed top-20 left-1/2 -translate-x-1/2 z-50 opacity-0 -translate-y-2 transition-all duration-300">
+            <div id="toast-content" class="bg-zinc-900/90 backdrop-blur-md border border-white/15 text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl">
+                Snapshot saved!
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Hidden Offscreen Canvas for High-Res Snapshot Rendering -->
+    <canvas id="capture-canvas" class="hidden"></canvas>
+
+    <script>
+        /**
+         * ProCam HTML5 Camera Application
+         * Handles MediaDevices getUserMedia, hardware/software zoom,
+         * 90-degree incremental rotation with viewport aspect-ratio fitting,
+         * horizontal mirroring, camera switching, and high-res canvas capture.
+         */
+        (() => {
+            // DOM Elements
+            const video = document.getElementById('camera-feed');
+            const viewport = document.getElementById('viewport');
+            const shutterFlash = document.getElementById('shutter-flash');
+            const cameraOffOverlay = document.getElementById('camera-off-overlay');
+            const gridOverlay = document.getElementById('grid-overlay');
+            const captureCanvas = document.getElementById('capture-canvas');
+            const ctx = captureCanvas.getContext('2d');
+
+            // Status & Readout Badges
+            const statusText = document.getElementById('status-text');
+            const liveDot = document.getElementById('live-dot');
+            const resolutionBadge = document.getElementById('resolution-badge');
+            const btnRotateReset = document.getElementById('btn-rotate-reset');
+            const zoomLabel = document.getElementById('zoom-label');
+            const zoomModeBadge = document.getElementById('zoom-mode-badge');
+
+            // Controls
+            const btnToggleCamera = document.getElementById('btn-toggle-camera');
+            const toggleCameraIcon = document.getElementById('toggle-camera-icon');
+            const toggleCameraLabel = document.getElementById('toggle-camera-label');
+            const btnOverlayStart = document.getElementById('btn-overlay-start');
+            const btnRotateCCW = document.getElementById('btn-rotate-ccw');
+            const btnRotateCW = document.getElementById('btn-rotate-cw');
+            const btnMirror = document.getElementById('btn-mirror');
+            const btnGrid = document.getElementById('btn-grid');
+            const btnZoomOut = document.getElementById('btn-zoom-out');
+            const btnZoomIn = document.getElementById('btn-zoom-in');
+            const btnZoomReset = document.getElementById('btn-zoom-reset');
+            const zoomSlider = document.getElementById('zoom-slider');
+            const btnCapture = document.getElementById('btn-capture');
+            const btnSwitchCamera = document.getElementById('btn-switch-camera');
+
+            // Error & Preview Modals
+            const errorOverlay = document.getElementById('error-overlay');
+            const errorTitle = document.getElementById('error-title');
+            const errorMessage = document.getElementById('error-message');
+            const btnRetryCamera = document.getElementById('btn-retry-camera');
+
+            const btnOpenPreview = document.getElementById('btn-open-preview');
+            const thumbnailImg = document.getElementById('thumbnail-img');
+            const previewModal = document.getElementById('preview-modal');
+            const modalPreviewImg = document.getElementById('modal-preview-img');
+            const snapshotDimensions = document.getElementById('snapshot-dimensions');
+            const btnClosePreview = document.getElementById('btn-close-preview');
+            const btnModalRetake = document.getElementById('btn-modal-retake');
+            const btnDownloadPng = document.getElementById('btn-download-png');
+            const toast = document.getElementById('toast');
+            const toastContent = document.getElementById('toast-content');
+
+            // Application State
+            const state = {
+                isCameraActive: false,
+                stream: null,
+                videoTrack: null,
+                devices: [],
+                currentDeviceIndex: 0,
+                facingMode: 'environment', // Default preference on mobile
+                rotation: 0,               // 0, 90, 180, 270
+                isMirrored: false,
+                showGrid: false,
+                zoom: 1.0,
+                minZoom: 1.0,
+                maxZoom: 5.0,
+                zoomStep: 0.1,
+                hardwareZoomSupported: false,
+                lastSnapshotUrl: null,
+                toastTimeout: null
+            };
+
+            /**
+             * Display a temporary floating toast message
+             */
+            function showToast(message) {
+                toastContent.textContent = message;
+                toast.classList.remove('opacity-0', '-translate-y-2');
+                toast.classList.add('opacity-100', 'translate-y-0');
+
+                clearTimeout(state.toastTimeout);
+                state.toastTimeout = setTimeout(() => {
+                    toast.classList.remove('opacity-100', 'translate-y-0');
+                    toast.classList.add('opacity-0', '-translate-y-2');
+                }, 2400);
+            }
+
+            /**
+             * Enumerate available video input devices to determine if camera switcher should show
+             */
+            async function updateDeviceList() {
+                try {
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+                    const allDevices = await navigator.mediaDevices.enumerateDevices();
+                    state.devices = allDevices.filter(device => device.kind === 'videoinput');
+
+                    if (state.devices.length > 1) {
+                        btnSwitchCamera.classList.remove('hidden');
+                        btnSwitchCamera.classList.add('flex', 'items-center', 'justify-center');
+                    } else {
+                        btnSwitchCamera.classList.add('hidden');
+                    }
+                } catch (err) {
+                    console.warn('Could not enumerate media devices:', err);
+                }
+            }
+
+            /**
+             * Stop any active media tracks cleanly before starting a new stream
+             */
+            function stopCurrentStream() {
+                if (state.stream) {
+                    state.stream.getTracks().forEach(track => track.stop());
+                    state.stream = null;
+                    state.videoTrack = null;
+                }
+                video.srcObject = null;
+            }
+
+            /**
+             * Synchronize UI controls and status badges between active and stopped camera states
+             */
+            function updateCameraPowerUI(isActive) {
+                state.isCameraActive = isActive;
+
+                if (isActive) {
+                    cameraOffOverlay.classList.add('hidden');
+                    btnToggleCamera.className = 'flex items-center gap-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 active:scale-95 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold transition-all shadow-md';
+                    toggleCameraIcon.className = 'w-2.5 h-2.5 rounded-xs bg-red-400';
+                    toggleCameraLabel.textContent = 'Stop Camera';
+
+                    btnCapture.disabled = false;
+                    zoomSlider.disabled = false;
+                    btnZoomReset.disabled = false;
+                    updateZoomUI();
+                } else {
+                    cameraOffOverlay.classList.remove('hidden');
+                    btnToggleCamera.className = 'flex items-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 active:scale-95 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold transition-all shadow-md';
+                    toggleCameraIcon.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                    toggleCameraLabel.textContent = 'Start Camera';
+
+                    statusText.textContent = 'Stopped';
+                    resolutionBadge.textContent = '-- × --';
+                    liveDot.classList.remove('bg-emerald-500', 'bg-amber-400', 'animate-pulse');
+                    liveDot.classList.add('bg-zinc-500');
+
+                    btnCapture.disabled = true;
+                    zoomSlider.disabled = true;
+                    btnZoomIn.disabled = true;
+                    btnZoomOut.disabled = true;
+                    btnZoomReset.disabled = true;
+                }
+            }
+
+            /**
+             * Explicitly stop the camera feed and release the hardware camera lock
+             */
+            function stopCamera() {
+                stopCurrentStream();
+                updateCameraPowerUI(false);
+                showToast('Camera stopped');
+            }
+
+            /**
+             * Initialize or switch the camera feed using getUserMedia
+             */
+            async function startCamera(deviceId = null) {
+                errorOverlay.classList.add('hidden');
+                cameraOffOverlay.classList.add('hidden');
+                statusText.textContent = 'Connecting...';
+                liveDot.classList.remove('bg-emerald-500', 'bg-zinc-500');
+                liveDot.classList.add('bg-amber-400', 'animate-pulse');
+
+                // Check secure context & API availability
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    showCameraError(
+                        'Camera API Unavailable',
+                        'Your browser does not support camera access or this page is not served over a secure HTTPS connection.'
+                    );
+                    return;
+                }
+
+                stopCurrentStream();
+
+                const videoConstraints = {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                };
+
+                if (deviceId) {
+                    videoConstraints.deviceId = { exact: deviceId };
+                } else if (state.devices.length > 0 && state.devices[state.currentDeviceIndex]?.deviceId) {
+                    videoConstraints.deviceId = { exact: state.devices[state.currentDeviceIndex].deviceId };
+                } else {
+                    videoConstraints.facingMode = { ideal: state.facingMode };
+                }
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: videoConstraints,
+                        audio: false
+                    });
+
+                    state.stream = stream;
+                    video.srcObject = stream;
+                    state.videoTrack = stream.getVideoTracks()[0];
+
+                    // Refresh device list now that permissions have been granted (labels become visible)
+                    await updateDeviceList();
+
+                    // Match current device index if available
+                    if (state.videoTrack && state.devices.length > 0) {
+                        const settings = state.videoTrack.getSettings();
+                        const foundIdx = state.devices.findIndex(d => d.deviceId === settings.deviceId);
+                        if (foundIdx !== -1) state.currentDeviceIndex = foundIdx;
+                    }
+
+                    // Preserve previous zoom level when restarting camera
+                    const previousZoom = state.zoom;
+                    configureZoomCapabilities();
+                    if (previousZoom > state.minZoom) {
+                        await setZoom(previousZoom);
+                    }
+
+                    // Wait for video metadata to compute aspect ratio & dimensions
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        const vw = video.videoWidth;
+                        const vh = video.videoHeight;
+                        resolutionBadge.textContent = `${vw} × ${vh}`;
+                        statusText.textContent = 'Live';
+                        liveDot.classList.remove('bg-amber-400', 'bg-red-500', 'bg-zinc-500');
+                        liveDot.classList.add('bg-emerald-500', 'animate-pulse');
+                        updateCameraPowerUI(true);
+                        applyVideoTransform();
+                    };
+
+                } catch (err) {
+                    console.error('getUserMedia Error:', err);
+                    updateCameraPowerUI(false);
+                    handleGetUserMediaError(err);
+                }
+            }
+
+            /**
+             * Provide clear, user-friendly error messages based on DOMException type
+             */
+            function handleGetUserMediaError(err) {
+                statusText.textContent = 'Offline';
+                liveDot.classList.remove('bg-emerald-500', 'bg-amber-400');
+                liveDot.classList.add('bg-red-500');
+
+                let title = 'Unable to Access Camera';
+                let msg = 'An unexpected error occurred while trying to start your camera.';
+
+                if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    title = 'HTTPS Connection Required';
+                    msg = 'Browsers block camera access on insecure HTTP connections. Please open this page via HTTPS or localhost.';
+                } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    title = 'Camera Permission Denied';
+                    msg = 'Access to your camera was blocked. Please click the camera/lock icon in your browser address bar to allow camera access, then click Retry.';
+                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    title = 'No Camera Detected';
+                    msg = 'No webcam or camera hardware was found on your device. Please connect a camera and try again.';
+                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    title = 'Camera In Use';
+                    msg = 'Your camera is currently being used by another application or browser tab. Close other apps using the camera and retry.';
+                } else if (err.name === 'OverconstrainedError') {
+                    title = 'Unsupported Camera Mode';
+                    msg = 'The requested camera resolution or lens is not supported by your device.';
+                }
+
+                showCameraError(title, msg);
+            }
+
+            function showCameraError(title, message) {
+                errorTitle.textContent = title;
+                errorMessage.textContent = message;
+                errorOverlay.classList.remove('hidden');
+            }
+
+            /**
+             * Detect if MediaStreamTrack supports native optical/digital hardware zoom;
+             * otherwise configure seamless digital CSS/Canvas zoom fallback.
+             */
+            function configureZoomCapabilities() {
+                state.hardwareZoomSupported = false;
+                state.zoom = 1.0;
+                state.minZoom = 1.0;
+                state.maxZoom = 5.0;
+                state.zoomStep = 0.1;
+
+                if (state.videoTrack && typeof state.videoTrack.getCapabilities === 'function') {
+                    const capabilities = state.videoTrack.getCapabilities();
+                    if (capabilities && 'zoom' in capabilities && capabilities.zoom) {
+                        state.hardwareZoomSupported = true;
+                        state.minZoom = capabilities.zoom.min || 1.0;
+                        state.maxZoom = Math.min(capabilities.zoom.max || 5.0, 10.0);
+                        state.zoomStep = capabilities.zoom.step || 0.1;
+                        state.zoom = state.minZoom;
+                    }
+                }
+
+                zoomSlider.min = state.minZoom;
+                zoomSlider.max = state.maxZoom;
+                zoomSlider.step = state.zoomStep;
+                zoomSlider.value = state.zoom;
+
+                zoomModeBadge.textContent = state.hardwareZoomSupported ? 'OPT' : 'DIG';
+                zoomModeBadge.title = state.hardwareZoomSupported
+                    ? 'Hardware Camera Zoom Active'
+                    : 'Digital Software Zoom Active';
+
+                updateZoomUI();
+            }
+
+            /**
+             * Set zoom level using hardware constraint if available, plus transform update
+             */
+            async function setZoom(newZoom) {
+                const clamped = Math.max(state.minZoom, Math.min(state.maxZoom, parseFloat(newZoom)));
+                state.zoom = Number(clamped.toFixed(2));
+                zoomSlider.value = state.zoom;
+
+                if (state.hardwareZoomSupported && state.videoTrack) {
+                    try {
+                        await state.videoTrack.applyConstraints({
+                            advanced: [{ zoom: state.zoom }]
+                        });
+                    } catch (err) {
+                        console.warn('Hardware zoom constraint failed, falling back to digital zoom:', err);
+                        state.hardwareZoomSupported = false;
+                        zoomModeBadge.textContent = 'DIG';
+                    }
+                }
+
+                updateZoomUI();
+                applyVideoTransform();
+            }
+
+            function updateZoomUI() {
+                zoomLabel.textContent = `${state.zoom.toFixed(1)}×`;
+                btnZoomOut.disabled = state.zoom <= state.minZoom + 0.001;
+                btnZoomIn.disabled = state.zoom >= state.maxZoom - 0.001;
+            }
+
+            /**
+             * Calculate proper scaling so that even when rotated 90° or 270° sideways,
+             * the live video feed fits cleanly inside the viewport without clipping or overflow,
+             * while seamlessly applying digital zoom and horizontal mirror transforms.
+             */
+            function applyVideoTransform() {
+                const vw = video.videoWidth || 16;
+                const vh = video.videoHeight || 9;
+                const cw = viewport.clientWidth;
+                const ch = viewport.clientHeight;
+
+                const isSideways = (state.rotation % 180 !== 0);
+
+                // Compute base fit dimensions inside the viewport container
+                let baseWidth, baseHeight;
+                if (!isSideways) {
+                    // Normal 0° or 180° orientation
+                    const scale = Math.min(cw / vw, ch / vh);
+                    baseWidth = vw * scale;
+                    baseHeight = vh * scale;
+                } else {
+                    // Rotated 90° or 270°: video's width occupies viewport height, and height occupies viewport width
+                    const scale = Math.min(cw / vh, ch / vw);
+                    baseWidth = vw * scale;
+                    baseHeight = vh * scale;
+                }
+
+                video.style.width = `${baseWidth}px`;
+                video.style.height = `${baseHeight}px`;
+
+                // If hardware zoom is active, the video track itself is already zoomed;
+                // otherwise apply software CSS scale.
+                const digitalScale = state.hardwareZoomSupported ? 1.0 : state.zoom;
+                const mirrorScaleX = state.isMirrored ? -1 : 1;
+
+                // Apply combined CSS transform
+                video.style.transform = `rotate(${state.rotation}deg) scale(${mirrorScaleX * digitalScale}, ${digitalScale})`;
+
+                // Update rotation indicator button
+                btnRotateReset.textContent = `${state.rotation}°`;
+                if (state.isMirrored) {
+                    btnMirror.classList.add('bg-amber-500/20', 'text-amber-400');
+                } else {
+                    btnMirror.classList.remove('bg-amber-500/20', 'text-amber-400');
+                }
+            }
+
+            /**
+             * Rotate feed by delta degrees (-90 or +90)
+             */
+            function rotateFeed(delta) {
+                state.rotation = (state.rotation + delta + 360) % 360;
+                applyVideoTransform();
+            }
+
+            /**
+             * Capture high-resolution screenshot onto offscreen HTML5 canvas
+             * baking in the exact active rotation, horizontal mirror, and digital zoom crop.
+             */
+            function captureSnapshot() {
+                if (!state.stream || video.readyState < 2) {
+                    showToast('Camera feed not ready yet');
+                    return;
+                }
+
+                // Trigger shutter flash visual feedback
+                shutterFlash.classList.remove('opacity-0');
+                shutterFlash.classList.add('opacity-90');
+                setTimeout(() => {
+                    shutterFlash.classList.remove('opacity-90');
+                    shutterFlash.classList.add('opacity-0');
+                }, 130);
+
+                const srcW = video.videoWidth;
+                const srcH = video.videoHeight;
+
+                // Calculate source crop rectangle if digital software zoom is used
+                const effectiveDigitalZoom = state.hardwareZoomSupported ? 1.0 : state.zoom;
+                const cropW = srcW / effectiveDigitalZoom;
+                const cropH = srcH / effectiveDigitalZoom;
+                const cropX = (srcW - cropW) / 2;
+                const cropY = (srcH - cropH) / 2;
+
+                const isSideways = (state.rotation % 180 !== 0);
+
+                // Set output canvas dimensions respecting 90°/270° rotation
+                captureCanvas.width = isSideways ? Math.round(cropH) : Math.round(cropW);
+                captureCanvas.height = isSideways ? Math.round(cropW) : Math.round(cropH);
+
+                ctx.save();
+                // Move origin to center of destination canvas
+                ctx.translate(captureCanvas.width / 2, captureCanvas.height / 2);
+
+                // Apply active rotation
+                ctx.rotate((state.rotation * Math.PI) / 180);
+
+                // Apply horizontal mirror if toggled
+                if (state.isMirrored) {
+                    ctx.scale(-1, 1);
+                }
+
+                // Draw cropped source video centered on transformed canvas
+                ctx.drawImage(
+                    video,
+                    cropX, cropY, cropW, cropH,
+                    -cropW / 2, -cropH / 2, cropW, cropH
+                );
+                ctx.restore();
+
+                // Export to PNG data URL
+                const dataUrl = captureCanvas.toDataURL('image/png');
+                state.lastSnapshotUrl = dataUrl;
+
+                // Update thumbnail & modal preview
+                thumbnailImg.src = dataUrl;
+                btnOpenPreview.classList.remove('hidden');
+
+                modalPreviewImg.src = dataUrl;
+                snapshotDimensions.textContent = `${captureCanvas.width} × ${captureCanvas.height} px`;
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                btnDownloadPng.href = dataUrl;
+                btnDownloadPng.download = `Visualiser_${timestamp}.png`;
+
+                showToast('Snapshot captured! Tap thumbnail to view or download.');
+            }
+
+            /**
+             * Cycle through available cameras (Front / Back / External Webcams)
+             */
+            async function switchCamera() {
+                if (state.devices.length <= 1) return;
+                state.currentDeviceIndex = (state.currentDeviceIndex + 1) % state.devices.length;
+                const nextDevice = state.devices[state.currentDeviceIndex];
+                showToast(`Switching camera${nextDevice.label ? ': ' + nextDevice.label : '...'}`);
+                await startCamera(nextDevice.deviceId);
+            }
+
+            // Event Listeners: Start / Stop Camera Toggle
+            btnToggleCamera.addEventListener('click', () => {
+                if (state.isCameraActive) {
+                    stopCamera();
+                } else {
+                    startCamera();
+                }
+            });
+            btnOverlayStart.addEventListener('click', () => startCamera());
+
+            // Event Listeners: Rotation & Mirror
+            btnRotateCCW.addEventListener('click', () => rotateFeed(-90));
+            btnRotateCW.addEventListener('click', () => rotateFeed(90));
+            btnRotateReset.addEventListener('click', () => {
+                state.rotation = 0;
+                applyVideoTransform();
+                showToast('Rotation reset to 0°');
+            });
+            btnMirror.addEventListener('click', () => {
+                state.isMirrored = !state.isMirrored;
+                applyVideoTransform();
+            });
+
+            // Event Listener: Viewfinder Grid Toggle
+            btnGrid.addEventListener('click', () => {
+                state.showGrid = !state.showGrid;
+                if (state.showGrid) {
+                    gridOverlay.classList.remove('opacity-0');
+                    gridOverlay.classList.add('opacity-100');
+                    btnGrid.classList.add('border-amber-400/50', 'text-amber-300');
+                } else {
+                    gridOverlay.classList.remove('opacity-100');
+                    gridOverlay.classList.add('opacity-0');
+                    btnGrid.classList.remove('border-amber-400/50', 'text-amber-300');
+                }
+            });
+
+            // Event Listeners: Zoom Controls
+            zoomSlider.addEventListener('input', (e) => {
+                if (!state.isCameraActive) return;
+                setZoom(e.target.value);
+            });
+            btnZoomIn.addEventListener('click', () => {
+                if (!state.isCameraActive) return;
+                setZoom(state.zoom + Math.max(state.zoomStep, 0.25));
+            });
+            btnZoomOut.addEventListener('click', () => {
+                if (!state.isCameraActive) return;
+                setZoom(state.zoom - Math.max(state.zoomStep, 0.25));
+            });
+            btnZoomReset.addEventListener('click', () => {
+                if (!state.isCameraActive) return;
+                setZoom(state.minZoom);
+                showToast(`Zoom reset to ${state.minZoom.toFixed(1)}×`);
+            });
+
+            // Event Listeners: Capture & Preview Modal
+            btnCapture.addEventListener('click', captureSnapshot);
+            btnOpenPreview.addEventListener('click', () => {
+                if (state.lastSnapshotUrl) {
+                    previewModal.classList.remove('hidden');
+                }
+            });
+            btnClosePreview.addEventListener('click', () => previewModal.classList.add('hidden'));
+            btnModalRetake.addEventListener('click', () => previewModal.classList.add('hidden'));
+            previewModal.addEventListener('click', (e) => {
+                if (e.target === previewModal) previewModal.classList.add('hidden');
+            });
+
+            // Event Listeners: Camera Switch & Retry
+            btnSwitchCamera.addEventListener('click', switchCamera);
+            btnRetryCamera.addEventListener('click', () => startCamera());
+
+            // Keyboard Shortcuts (Spacebar to capture, ArrowUp/Down to zoom, R to rotate)
+            window.addEventListener('keydown', (e) => {
+                if (!previewModal.classList.contains('hidden')) {
+                    if (e.key === 'Escape') previewModal.classList.add('hidden');
+                    return;
+                }
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    if (state.isCameraActive) captureSnapshot();
+                } else if (e.key === 'r' || e.key === 'R') {
+                    rotateFeed(90);
+                } else if ((e.key === '+' || e.key === '=') && state.isCameraActive) {
+                    setZoom(state.zoom + 0.2);
+                } else if ((e.key === '-' || e.key === '_') && state.isCameraActive) {
+                    setZoom(state.zoom - 0.2);
+                }
+            });
+
+            // Recalculate video fit when viewport resizes or device orientation changes
+            window.addEventListener('resize', applyVideoTransform);
+
+            // Start camera automatically on page load
+            window.addEventListener('load', () => {
+                startCamera();
+            });
+        })();
+    </script>
+</body>
+</html>
